@@ -1,0 +1,36 @@
+A Virtual Machine translation unit for a VM language to the Hack machine language.
+
+Specification is in the book, The elements of computing fundementals.
+
+Here is the layout of the program (sort of), non comprehensive of functions,
+but it contians the general layout of the different modules.
+
+
+
+Modules:
+
+Parser Module - parses the given VM file into an easier to work with internal datastructure.
+
+- Interface
+    parserInitialize() - takes a file name / path which is mmaped into memory
+    parserDestroy() - destroys the parser and unmaps the file
+    parserParseCommands() - given a stack arena allocator and a command_module structure 
+                            parse the commands contained within the mmaped file the parser
+                            holds. The memeory in the given command_module have the lifetime
+                            of the given stack arena and are controlled by it.
+    
+Parser structure
+    - mmaped file pointer
+    - mmaped file size
+
+
+Command Module - contains structures and functions regarding parsed vm commands
+
+Command Module structure
+    - Array of command structures
+    - total commands
+    - array of indexes where functions begin - not used currently, for later
+
+Command structure
+    - holds the command
+    - holds the commands operands
