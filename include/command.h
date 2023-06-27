@@ -146,7 +146,7 @@ typedef struct {
             char* label;
             uint16_t locals;
         } flow;
-    } aruments;
+    } arguments;
 
 } command_t;
 

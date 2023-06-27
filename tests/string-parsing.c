@@ -19,7 +19,7 @@ int main()
         fprintf(stderr, "Failed to initialize parser\n");
     }
 
-    if (stackArenaInitialize(&stack_arena, 4 * parser.file_size) < 0) {
+    if (stackArenaInitialize(&stack_arena, 8 * parser.file_size) < 0) {
         parserDestroy(&parser);
     }
 

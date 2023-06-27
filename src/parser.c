@@ -95,11 +95,9 @@ static void parserChunkFile(parser_t* parser, char** line_pointers, size_t line_
         size_t new_size = (parser->file_size - (size_t) (line_pointers[index - 1] - parser->file_map));
 
         line_pointers[index] = memchr(line_pointers[index - 1], (int) '\n', new_size) + 1;
+        *(line_pointers[index] - 1) = '\0';
     }
 }
-
-
-
 
 /* Like strtok, but it stops at end_ptr instead of trying to take the strings length
    * It also ingores successive delimating characters.
@@ -117,29 +115,10 @@ static char* tokenizeCommand(char* command, char* command_end, const char* delim
         return NULL;
     }
 
-    // Indicate if the previous character was a delimter
-    bool prev_delim = FALSE;
+    /* Find the start of the string, ignoring any leading delimeters
+     * Find the next occurance of a delimeter and replace it with a null ptr, within the bounds */
 
-    for (size_t position = 0; (str_ptr + position) != command_end; position++) { 
-
-        bool is_delim = strchr(delim, str_ptr[position]) != NULL;
-
-        if (prev_delim && !is_delim) { 
-            str_ptr[position - 1] = '\0';
-            char* temp = str_ptr;
-            str_ptr = &str_ptr[position];
-
-            return temp;
-        } 
-
-        else if (!prev_delim && is_delim) { 
-            prev_delim = TRUE;
-        } 
-    } 
-
-    char* temp = str_ptr;
-    str_ptr = NULL;
-    return temp;
+    return NULL;
 }
 
 /* Translate an operator keyword to its corresponding enum value 
@@ -177,8 +156,97 @@ static memory_segment_t translateMemorySegmentString(char* str)
 /* Parse the given line into a command structure 
  * Return 0 on success
  * Return -1 on failure */
-static int32_t parserParseCommand(parser_t* parser, char* line_pointer, command_t* command)
+static int32_t parserParseCommand(stack_arena_t* stack_arena, char* line_pointer, command_t* command)
 {
+    /* Process
+     * Tokenize the line
+     * Run the first token through the keyword translator
+     * depending on what keyword it is either
+     *  - Translate the memory keyword and index value
+     *  - Copy the label name into a string
+     *  - Copy the function name into a string and the number of arguments
+     */
+
+    /* Variable to list the delimeters */
+    const char delimeters[] = " ";
+    char* const line_end = strchr(line_pointer, '\n');
+
+    char* token = strtok(line_pointer, delimeters);
+    if (token == NULL) {
+        return -1;
+    }
+
+    command->op = translateOperatorString(token);
+
+    /* Could be a switch statement, but I think this looks neater -\_(x_x)_/- */
+
+    if (command->op  == OP_UNKNOWN) {
+        return -1;
+    }
+    else if (command->op == OP_PUSH || command->op == OP_POP) {
+        // memory shiz
+        token = strtok(NULL, delimeters);
+        if (token == NULL) {
+            return -1;
+        }
+
+        command->arguments.memory.segment = translateMemorySegmentString(token);
+
+        if (command->arguments.memory.segment == SEG_UNKNOWN) {
+            return -1;
+        }
+
+        // Get index value
+        token = strtok(NULL, delimeters);
+        if (token == NULL) {
+            return -1;
+        }
+
+        char* endptr = line_end;
+        command->arguments.memory.index = strtol(token, &endptr, 10);
+
+        /* endptr should be have the value '\0' if the string was valid */
+        if (*endptr != '\0') {
+            return -1;
+        }
+    }
+
+
+    else if (command->op == OP_LABEL    || command->op == OP_GOTO || command->op == OP_IFGOTO ||
+             command->op == OP_FUNCTION || command->op == OP_CALL) {
+        // Non uninariy Flow control
+        token = strtok(NULL, delimeters);
+        if (token == NULL) {
+            return -1;
+        }
+
+        size_t length = strlen(token);
+        command->arguments.flow.label = stackArenaPush(stack_arena, length + 1);
+        if (command->arguments.flow.label == NULL) {
+            return -1;
+        }
+
+        strncpy(command->arguments.flow.label, token, length); // might be off by one error
+        
+        /* The Function and Call keywords have a label and a subsequent number */
+        if (command->op == OP_FUNCTION || command->op == OP_CALL) {
+
+            token = strtok(NULL, delimeters);
+            if (token == NULL) {
+                return -1;
+            }
+
+            char* endptr = line_end;
+            command->arguments.flow.locals = strtol(token, &endptr, 10);
+
+            /* endptr should be have the value '\0' if the string was valid */
+            if (*endptr != '\0') {
+                return -1;
+            }
+        }
+    }
+
+    /* Otherwise it must be a uninary operator and no more parsing is needed */
 
     return 0;
 }
@@ -224,7 +292,7 @@ int32_t parserParseCommands(parser_t* parser, command_module_t* command_module, 
          index++) {
 
         // Parse the current line
-        if (0 > parserParseCommand(parser, line_pointers[index], &command_module->commands[index])) {
+        if (0 > parserParseCommand(stack_arena, line_pointers[index], &command_module->commands[index])) {
             return -1;
         }
     }

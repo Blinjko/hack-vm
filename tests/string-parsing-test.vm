@@ -1,21 +1,22 @@
-push 0
-pop sum
-push y
-pop j
+function mult 2
+    push constant 0
+    pop local 0
+    push argument 1
+    pop local 1
 label loop
-push 0
-push j
-eq
-if-goto end
-push sum
-push x
-add
-pop sum
-push j
-push 1
-sub
-pop j
-goto loop
+    push constant 0
+    push local 1
+    eq
+    if-goto end
+    push local 0
+    push argument 0
+    add
+    pop local 0
+    push local 1
+    push constant 1
+    sub
+    pop local 1
+    goto loop
 label end
-push sum
-return
+    push local 0
+    return
