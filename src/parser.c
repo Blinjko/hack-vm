@@ -15,6 +15,13 @@
 #include <string.h>
 
 
+/* String to keyword mappings */
+
+/* Mappings are relevent to enum positions */
+static char const* const OPERAND_KEYWORD_MAPPING[17] = {"add", "sub", "neg", "and", "or", "not", "lt", "gt", "eq", "push", "pop", "label", "goto", "if-goto", "function", "call", "return"}; 
+static char const* const MEMORY_SEGMENT_KEYWORD_MAPPING[8] = {"argument", "local", "static", "constant", "this", "that", "pointer", "temp"};
+
+
 /* Intialize the given parser with the given file.
  * Return 0 on success,
  * Return -1 on failure */
@@ -59,7 +66,7 @@ void parserDestroy(parser_t* parser)
 }
 
 
-/* Function to count the occurances of c in a memory segment,
+/* Function to count the occurances of a character (c) in a memory segment,
  * stdlib didn't provide one so here we are.
  * Return the amount of occuances, if given nullptr undefined behaviour  */
 static size_t memCountByte(const void* str, int c, size_t size)
@@ -82,7 +89,7 @@ static void parserChunkFile(parser_t* parser, char** line_pointers, size_t line_
 {
     line_pointers[0] = parser->file_map;
 
-    for (size_t index = 1; index < line_pointers_size && line_pointers[index] != NULL; index++) {
+    for (size_t index = 1; index < line_pointers_size && line_pointers[index - 1] != NULL; index++) {
 
         // For readability
         size_t new_size = (parser->file_size - (size_t) (line_pointers[index - 1] - parser->file_map));
@@ -94,7 +101,7 @@ static void parserChunkFile(parser_t* parser, char** line_pointers, size_t line_
 
 
 
-/* Like strtok, but it stops at end_ptr instead of trying to take the strings lengt
+/* Like strtok, but it stops at end_ptr instead of trying to take the strings length
    * It also ingores successive delimating characters.
    * Meant to be called with NULL for subsequent tokenization of the same string,
    * Return pointer to next token or NULL if there are no more tokens */
@@ -106,7 +113,6 @@ static char* tokenizeCommand(char* command, char* command_end, const char* delim
         str_ptr = command;
     } 
 
-    
     if (str_ptr == NULL) {
         return NULL;
     }
@@ -134,6 +140,38 @@ static char* tokenizeCommand(char* command, char* command_end, const char* delim
     char* temp = str_ptr;
     str_ptr = NULL;
     return temp;
+}
+
+/* Translate an operator keyword to its corresponding enum value 
+ * String is assumed to be null terminated
+ * Return OP_UNKNOWN if the given keyword is unknown.
+ * Return corresponding operation otherwise */
+static operator_t translateOperatorString(char* str)
+{
+    for (size_t index = 0; index < OP_MAX; index++) {
+
+        if (strcmp(str, OPERAND_KEYWORD_MAPPING[index]) == 0) {
+            return (operator_t) index;
+        }
+    }
+
+    return OP_UNKNOWN;
+}
+
+/* Translate a memory segment keyword to its corresponding enum value
+ * passed string is assumed to be null terminated
+ * Return SEG_UNKNOWN if the keyword is unknown
+ * Return corresponding segment enumeration otherwise */
+static memory_segment_t translateMemorySegmentString(char* str)
+{
+    for (size_t index = 0; index < SEG_MAX; index++) {
+
+        if (strcmp(str, MEMORY_SEGMENT_KEYWORD_MAPPING[index]) == 0) {
+            return (memory_segment_t) index;
+        }
+    }
+
+    return SEG_UNKNOWN;
 }
 
 /* Parse the given line into a command structure 
