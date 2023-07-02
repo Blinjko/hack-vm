@@ -130,7 +130,7 @@ typedef enum {
 
 typedef struct {
     operator_t op; // The operator keyword, pop, push, add, sub, ..., etc
-                         //
+
     // Defines the potential arugments ( if any )
     union {
         
@@ -157,8 +157,6 @@ typedef struct {
     command_t* commands;
     size_t total_commands;
 
-    // Add support for a symbol table?
-    // Its only of use during code gen so probably has no place here
 } command_module_t;
 
 /* no functions currently, possibly some to come */

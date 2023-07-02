@@ -34,3 +34,36 @@ Command Module structure
 Command structure
     - holds the command
     - holds the commands operands
+
+
+
+Assembly Generation Module structure
+    - Command Module
+    - current command #
+    - Array of constants
+    - output file
+
+
+Assembly Generation Module function interface
+    assemblyGenInitialize() - takes an output file name / path and opens it for writing
+    assemblyGenPreable()    - Generates the assembly preable to kick off the program, only called once, first
+    assemblyGen()           - given a command module, generate assembly code
+
+
+    -- Static Non public functions --
+    
+    translateCommand()        - Translates a VM command into assembly
+    translateMemoryCommand()  - Tranlates Memory commands, push / pop
+    translateLogicCommand()   - Translates logical commands, math, bitwise, comparisons
+    translateFlowCommand()    - Translates flow commands, call, function, return, label
+
+
+-- For generating assembly MNEUMONICS --
+
+Mneumonic structure
+    - MNEUMONIC     Type of mnuemonic, @A, M, JUMP, LABEL
+    - LHS           (Left Hand Side ) if c command its the destination
+    - RHS
+    
+Functions
+    generateMneumonics() - Given an array of mneumonic structures, generate an assembly string
