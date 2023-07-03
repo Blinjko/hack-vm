@@ -168,7 +168,7 @@ static int32_t parserParseCommand(stack_arena_t* stack_arena, char* line_pointer
      */
 
     /* Variable to list the delimeters */
-    const char delimeters[] = " ";
+    const char delimeters[] = " \n";
     char* const line_end = strchr(line_pointer, '\n');
 
     char* token = strtok(line_pointer, delimeters);

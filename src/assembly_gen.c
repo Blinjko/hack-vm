@@ -80,7 +80,7 @@ typedef enum {
 
 /* Mappings for the enums values to strngs, arrays are relevant to enum values */
 static char const* const COMP_STR_MAPPING[] = {"0", "1", "-1", "D", "!D", "-D", "D+1", "D-1", "A", "!A", "-A",
- "A+1", "D-A", "A-D", "D&A", "D|A", "M", "!M", "-M", "M+1", "M-1", "D+M", "D-M", "M-D", "D&M", "D|M" };
+ "A+1", "A-1", "D+A", "D-A", "A-D", "D&A", "D|A", "M", "!M", "-M", "M+1", "M-1", "D+M", "D-M", "M-D", "D&M", "D|M" };
 
 static char const* const DEST_STR_MAPPING[] = {"M", "D", "MD", "A", "AM", "AD", "AMD"};
 
@@ -165,7 +165,7 @@ char* generateMneumonics(mneumonic_t* mneumonics, size_t total_mneumonics, stack
              * if the length of the label is greater than there is room for.
              * 6 is used because the buffer is by default 9, -1 for the '@',
              * and -1 for the \n, -1 for '\0'*/
-            if (strlen(mneumonics[index].variants.label) < 6 && 
+            if (strlen(mneumonics[index].variants.label) > 6 && 
                 stackArenaPush(stack_arena, strlen(mneumonics[index].variants.label) - 6) == NULL) {
                 return NULL;
             }
@@ -179,7 +179,7 @@ char* generateMneumonics(mneumonic_t* mneumonics, size_t total_mneumonics, stack
         }
 
         else if (mneumonics[index].opcode == OPCODE_JUMP) {
-            bytes_written = sprintf(assembly_string, "%s;%s\n", COMP_STR_MAPPING[mneumonics[index].variants.compute.dest],
+            bytes_written = sprintf(assembly_string, "%s;%s\n", COMP_STR_MAPPING[mneumonics[index].variants.compute.comp],
                                                                 JUMP_STR_MAPPING[mneumonics[index].variants.compute.jump]);
         }
 
@@ -189,7 +189,7 @@ char* generateMneumonics(mneumonic_t* mneumonics, size_t total_mneumonics, stack
              * if the length of the label is greater than there is room for.
              * 6 is used because the buffer is by default 9, -1 for the ':',
              * and -1 for the \n, -1 for '\0' */
-            if (strlen(mneumonics[index].variants.label) < 6 && 
+            if (strlen(mneumonics[index].variants.label) > 6 && 
                 stackArenaPush(stack_arena, strlen(mneumonics[index].variants.label) - 6) == NULL) {
                 return NULL;
             }
@@ -257,7 +257,7 @@ void assemblyGenDestroy(assembly_gen_t* assembly_gen)
 /* Translate a logical VM command into assembly
  * return valid char* on success,
  * return NULL on failure */
-char* translateLogicalCommand(stack_arena_t* stack_arena, command_t* command, char* filename)
+char* translateLogicalCommand(stack_arena_t* stack_arena, command_t* command, const char* filename)
 {
     /* All logical commands are uninary operators
      * They take 2 items off the stack, perform an operation on them
@@ -312,6 +312,20 @@ char* translateLogicalCommand(stack_arena_t* stack_arena, command_t* command, ch
         /* Comparison operations will call to a predefined label called preable_true and preable_false
          * at these labels will be instructions to set the value at the top of the stack to true and false
          * respectively, then it will look into R5 and jump there */
+
+        instructions = stackArenaPush(stack_arena, 15 * sizeof(mneumonic_t));
+        if (instructions == NULL) {
+            return NULL;
+        }
+        total_instructions = 15;
+
+        /* Create a temp string to hold the unique label for this operation, 9 is chosen to add on because
+         * 1 for \0, 4 or the '.op.' part, and 4 for the operation number, which will be in hex */
+        char* label_str = stackArenaPush(stack_arena, strlen(filename) + 9);
+        if (label_str == NULL) {
+            return NULL;
+        }
+        sprintf(label_str, "%s.op.%x", filename, instruction_counter++);
         
         createMneumonic(&instructions[0], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);             // @SP
         createMneumonic(&instructions[1], OPCODE_COMPUTE, NULL, COMP_M, DEST_A, JUMP_UNKNOWN, 0);                          // A=M
@@ -319,34 +333,30 @@ char* translateLogicalCommand(stack_arena_t* stack_arena, command_t* command, ch
         createMneumonic(&instructions[3], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);             // @SP
         createMneumonic(&instructions[4], OPCODE_COMPUTE, NULL, COMP_M_MINUS_1, DEST_AM, JUMP_UNKNOWN, 0);                 // AM=M-1
         createMneumonic(&instructions[5], OPCODE_COMPUTE, NULL, COMP_D_MINUS_M, DEST_MD, JUMP_UNKNOWN, 0);                 // MD=D-M
-        createMneumonic(&instructions[6], OPCODE_A_SYMBOL, "PREABLE_TRUE", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);   // @PREABLE_TRUE
+        createMneumonic(&instructions[6], OPCODE_A_SYMBOL, label_str, COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);        // @FILENAME.op.operation_number
+        createMneumonic(&instructions[7], OPCODE_COMPUTE, NULL, COMP_A, DEST_D, JUMP_UNKNOWN, 0);                          // D=A
+        createMneumonic(&instructions[8], OPCODE_A_SYMBOL, "R5", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);             // @R5
+        createMneumonic(&instructions[9], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                          // M=D
+        createMneumonic(&instructions[10], OPCODE_A_SYMBOL, "PREABLE_TRUE", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);  // @PREABLE_TRUE
 
         switch (command->op) {
             case OP_LT:
-                createMneumonic(&instructions[7], OPCODE_COMPUTE, NULL, COMP_D, DEST_UNKNOWN, JUMP_JLT, 0);                // D;JLT
+                createMneumonic(&instructions[11], OPCODE_JUMP, NULL, COMP_D, DEST_UNKNOWN, JUMP_JLT, 0);                  // D;JLT
                 break;
             case OP_GT:
-                createMneumonic(&instructions[7], OPCODE_COMPUTE, NULL, COMP_D, DEST_UNKNOWN, JUMP_JGT, 0);                // D;JGT
+                createMneumonic(&instructions[11], OPCODE_JUMP, NULL, COMP_D, DEST_UNKNOWN, JUMP_JGT, 0);                  // D;JGT
                 break;
             case OP_EQ:
-                createMneumonic(&instructions[7], OPCODE_COMPUTE, NULL, COMP_D, DEST_UNKNOWN, JUMP_JEQ, 0);                // D;JEQ
+                createMneumonic(&instructions[11], OPCODE_JUMP, NULL, COMP_D, DEST_UNKNOWN, JUMP_JEQ, 0);                  // D;JEQ
                 break;
 
             default:
                 return NULL;
         }
 
-        createMneumonic(&instructions[8], OPCODE_A_SYMBOL, "PREABLE_FALSE", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);  // @PREABLE_FALSE
-        createMneumonic(&instructions[9], OPCODE_A_SYMBOL, NULL, COMP_0, DEST_UNKNOWN, JUMP_JMP, 0);                       // 0;JMP
-
-        /* Create a temp string to hold the label, 9 is chosen to add on because
-         * 1 for \0, 4 or the '.op.' part, and 4 for the operation number, which will be in hex */
-        char* label_str = stackArenaPush(stack_arena, strlen(filename) + 9);
-        if (label_str == NULL) {
-            return NULL;
-        }
-        sprintf(label_str, "%s.op.%x", filename, instruction_counter);
-        createMneumonic(&instructions[10], OPCODE_SYMBOL, label_str, COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);          // FILENAME.op.operation_number:
+        createMneumonic(&instructions[12], OPCODE_A_SYMBOL, "PREABLE_FALSE", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);  // @PREABLE_FALSE
+        createMneumonic(&instructions[13], OPCODE_JUMP, NULL, COMP_0, DEST_UNKNOWN, JUMP_JMP, 0);                           // 0;JMP
+        createMneumonic(&instructions[14], OPCODE_SYMBOL, label_str, COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);          // FILENAME.op.operation_number:
 
     }
 
@@ -385,8 +395,8 @@ char* translateLogicalCommand(stack_arena_t* stack_arena, command_t* command, ch
     return generateMneumonics(instructions, total_instructions, stack_arena);
 }
 
-char* translateFlowCommand(stack_arena_t* stack_arena, command_t* command, const char* filename);
-char* translateMemoryCommand(stack_arena_t* stack_arena, command_t* command, const char* filename);
+char* translateFlowCommand(stack_arena_t* stack_arena, command_t* command, const char* filename) { return NULL; }
+char* translateMemoryCommand(stack_arena_t* stack_arena, command_t* command, const char* filename) { return NULL; }
 
 /* Translate VM command to assembly
  * Returns valid char* to a string of assembly instruction(s) on success
@@ -403,7 +413,7 @@ char* translateCommand(stack_arena_t* stack_arena, command_t* command, const cha
         case OP_AND:
         case OP_OR:
         case OP_NOT:
-            return translateLogicalCommand(stack_arena, command);
+            return translateLogicalCommand(stack_arena, command, filename);
 
         case OP_LABEL:
         case OP_CALL:
@@ -442,14 +452,15 @@ int32_t assemblyGen(assembly_gen_t* assembly_gen, command_module_t* commands, co
      * 7. goto step 2
      */
 
+
     assert(assembly_gen != NULL && commands != NULL && filename != NULL &&
-           assembly_gen->output_file != NULL && commands->total_commands > 0 &&
-           commands->commands[0].op == OP_FUNCTION);
+           assembly_gen->output_file != NULL && commands->total_commands > 0); /* && commented out for testing
+           commands->commands[0].op == OP_FUNCTION); */
 
     stack_arena_t stack_arena;
 
     /* 512 bytes should be sufficient */
-    if (stackArenaInitialize(&stack_arena, 512) < 0) {
+    if (stackArenaInitialize(&stack_arena, 1024) < 0) {
         return -1;
     }
 
@@ -470,6 +481,8 @@ int32_t assemblyGen(assembly_gen_t* assembly_gen, command_module_t* commands, co
         if (fflush(assembly_gen->output_file) < 0) {
             break;
         }
+
+        stackArenaPop(&stack_arena, stack_arena.position);
     }
 
     /* If this condition is true then the loop didn't finish properly */
