@@ -9,6 +9,7 @@
 
 /* This file contains the definitions for the parser structure(s) and functions */
 
+// ADD functions to check for sematic errors in parsed commands, i.e pop constant 0 ( doesn't make sense )
 
 
 typedef struct {

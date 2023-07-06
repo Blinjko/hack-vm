@@ -11,10 +11,11 @@
 
 typedef struct {
     command_module_t* commands;
-    size_t            command_index;
-
-    uint16_t          constants;
-    size_t            total_constants;
+    size_t            static_variable_base;     /* Base number for the static variable addresses
+                                                 * this is needed because the memory segment is shared
+                                                 * through the whole program, but the indexes are relative
+                                                 * to the file */
+    size_t            total_static_variables;   /* Holds the number of static variables used in the current file */
 
     FILE*             output_file;
 } assembly_gen_t;
