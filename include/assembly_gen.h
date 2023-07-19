@@ -22,7 +22,7 @@ typedef struct {
 
 int32_t assemblyGenInitialize(assembly_gen_t* assembly_gen, const char* filepath);
 void    assemblyGenDestroy(assembly_gen_t* assembly_gen);
-int32_t assemblyGenPreamble(assembly_gen_t* assembly_gen, const char* entry_function);
+int32_t assemblyGenPreamble(assembly_gen_t* assembly_gen, char* entry_function);
 int32_t assemblyGen(assembly_gen_t* assembly_gen, command_module_t* commands, const char* filename);
 
 

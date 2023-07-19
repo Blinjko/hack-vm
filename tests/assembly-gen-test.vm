@@ -1,9 +1,2 @@
-add
-sub
-and
-or
-not
-neg
-gt
-lt
-eq
+function mult 2
+return

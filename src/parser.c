@@ -94,31 +94,9 @@ static void parserChunkFile(parser_t* parser, char** line_pointers, size_t line_
         // For readability
         size_t new_size = (parser->file_size - (size_t) (line_pointers[index - 1] - parser->file_map));
 
-        line_pointers[index] = memchr(line_pointers[index - 1], (int) '\n', new_size) + 1;
+        line_pointers[index] =  (char*) memchr(line_pointers[index - 1], (int) '\n', new_size) + 1;
         *(line_pointers[index] - 1) = '\0';
     }
-}
-
-/* Like strtok, but it stops at end_ptr instead of trying to take the strings length
-   * It also ingores successive delimating characters.
-   * Meant to be called with NULL for subsequent tokenization of the same string,
-   * Return pointer to next token or NULL if there are no more tokens */
-static char* tokenizeCommand(char* command, char* command_end, const char* delim)
-{
-    static char* str_ptr;
-
-    if (command != NULL) { 
-        str_ptr = command;
-    } 
-
-    if (str_ptr == NULL) {
-        return NULL;
-    }
-
-    /* Find the start of the string, ignoring any leading delimeters
-     * Find the next occurance of a delimeter and replace it with a null ptr, within the bounds */
-
-    return NULL;
 }
 
 /* Translate an operator keyword to its corresponding enum value 

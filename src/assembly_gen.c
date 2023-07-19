@@ -187,14 +187,14 @@ char* generateMneumonics(mneumonic_t* mneumonics, size_t total_mneumonics, stack
 
             /* Extend the buffer to accomodate for the length of the label
              * if the length of the label is greater than there is room for.
-             * 6 is used because the buffer is by default 9, -1 for the ':',
+             * 5 is used because the buffer is by default 9, -2 for the '()',
              * and -1 for the \n, -1 for '\0' */
             if (strlen(mneumonics[index].variants.label) > 6 && 
-                stackArenaPush(stack_arena, strlen(mneumonics[index].variants.label) - 6) == NULL) {
+                stackArenaPush(stack_arena, strlen(mneumonics[index].variants.label) - 5) == NULL) {
                 return NULL;
             }
 
-            bytes_written = sprintf(assembly_string, "%s:\n", mneumonics[index].variants.label);
+            bytes_written = sprintf(assembly_string, "(%s)\n", mneumonics[index].variants.label);
         }
 
         /* Unknown opcode type */
@@ -327,16 +327,16 @@ char* translateLogicalCommand(stack_arena_t* stack_arena, command_t* command, co
         }
         sprintf(label_str, "%s.op.%x", filename, instruction_counter++);
         
+        createMneumonic(&instructions[6], OPCODE_A_SYMBOL, label_str, COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);        // @FILENAME.op.operation_number
+        createMneumonic(&instructions[7], OPCODE_COMPUTE, NULL, COMP_A, DEST_D, JUMP_UNKNOWN, 0);                          // D=A
+        createMneumonic(&instructions[8], OPCODE_A_SYMBOL, "R13", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);            // @R13
+        createMneumonic(&instructions[9], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                          // M=D
         createMneumonic(&instructions[0], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);             // @SP
         createMneumonic(&instructions[1], OPCODE_COMPUTE, NULL, COMP_M, DEST_A, JUMP_UNKNOWN, 0);                          // A=M
         createMneumonic(&instructions[2], OPCODE_COMPUTE, NULL, COMP_M, DEST_D, JUMP_UNKNOWN, 0);                          // D=M
         createMneumonic(&instructions[3], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);             // @SP
         createMneumonic(&instructions[4], OPCODE_COMPUTE, NULL, COMP_M_MINUS_1, DEST_AM, JUMP_UNKNOWN, 0);                 // AM=M-1
         createMneumonic(&instructions[5], OPCODE_COMPUTE, NULL, COMP_D_MINUS_M, DEST_MD, JUMP_UNKNOWN, 0);                 // MD=D-M
-        createMneumonic(&instructions[6], OPCODE_A_SYMBOL, label_str, COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);        // @FILENAME.op.operation_number
-        createMneumonic(&instructions[7], OPCODE_COMPUTE, NULL, COMP_A, DEST_D, JUMP_UNKNOWN, 0);                          // D=A
-        createMneumonic(&instructions[8], OPCODE_A_SYMBOL, "R13", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);            // @R13
-        createMneumonic(&instructions[9], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                          // M=D
         createMneumonic(&instructions[10], OPCODE_A_SYMBOL, "PREABLE_TRUE", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);  // @PREABLE_TRUE
 
         switch (command->op) {
@@ -395,7 +395,164 @@ char* translateLogicalCommand(stack_arena_t* stack_arena, command_t* command, co
     return generateMneumonics(instructions, total_instructions, stack_arena);
 }
 
-char* translateFlowCommand(stack_arena_t* stack_arena, command_t* command, const char* filename) { return NULL; }
+char* translateFlowCommand(stack_arena_t* stack_arena, command_t* command, const char* filename, uint16_t call_counter)
+{
+    size_t instructions_index = 0;
+    mneumonic_t* instructions = NULL;
+
+    /* All the operations that fall into this functions domain have no overlap of function
+     * so, this will just be a simple conditional stucture, albeit very long */
+
+    if (command->op == OP_LABEL) {
+        instructions = stackArenaPush(stack_arena, sizeof(mneumonic_t));
+        if (instructions == NULL) {
+            return NULL;
+        }
+
+        createMneumonic(&instructions[instructions_index++], OPCODE_SYMBOL, command->arguments.flow.label, 
+                COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);                                                                           // (label)
+    }
+
+    else if (command->op == OP_CALL) {
+
+        /* The + 7 is for the 4 hex characters that represent call_counter, 1 for the null terminator, and 2 for the periods*/
+        char* return_label = stackArenaPush(stack_arena, strlen(command->arguments.flow.label) + strlen(filename) + 7);
+        if (return_label == NULL) {
+            return NULL;
+        }
+        sprintf(return_label, "%s.%s.%x", filename, command->arguments.flow.label, call_counter);
+
+        /* 24 instructions are needed for this operation */
+        instructions = stackArenaPush(stack_arena, 24 * sizeof(mneumonic_t));
+        if (instructions == NULL) {
+            return NULL;
+        }
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "ARG", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);      // @ARG
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M, DEST_D, JUMP_UNKNOWN, 0);                    // D=M
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);       // @SP
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M_PLUS_1, DEST_AM, JUMP_UNKNOWN, 0);            // AM=M+1
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                    // M=D
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_NUMBER, NULL, COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 
+                command->arguments.flow.locals);                                                                                        // @#arguments
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_A_PLUS_1, DEST_D, JUMP_UNKNOWN, 0);             // D=A+1
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);       // @SP
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M_MINUS_D, DEST_D, JUMP_UNKNOWN, 0);            // D=M-D
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "ARG", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);      // @ARG
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                    // M=D
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "LCL", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);      // @LCL
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M, DEST_D, JUMP_UNKNOWN, 0);                    // D=M
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);       // @SP
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M_PLUS_1, DEST_AM, JUMP_UNKNOWN, 0);            // AM=M+1
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                    // M=D
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, return_label, 
+                COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);                                                                           // @return_label
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_A, DEST_D, JUMP_UNKNOWN, 0);                    // D=A
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);       // @SP
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M_PLUS_1, DEST_AM, JUMP_UNKNOWN, 0);            // AM=M+1
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                    // M=D
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, command->arguments.flow.label,
+                 COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);                                                                          // @function_name
+        createMneumonic(&instructions[instructions_index++], OPCODE_JUMP, NULL, COMP_0, DEST_UNKNOWN, JUMP_JMP, 0);                     // 0;JMP
+        createMneumonic(&instructions[instructions_index++], OPCODE_SYMBOL, return_label, 
+                COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);                                                                           // (return_label)
+    }
+    else if (command->op == OP_GOTO) {
+        /* 2 instructions are needed for this operation */
+        instructions = stackArenaPush(stack_arena, 2 * sizeof(mneumonic_t));
+        if (instructions == NULL) {
+            return NULL;
+        }
+
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, command->arguments.flow.label, 
+                COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);                                                                           // @label
+        createMneumonic(&instructions[instructions_index++], OPCODE_JUMP, NULL, COMP_0, DEST_UNKNOWN, JUMP_JMP, 0);                     // 0;JMP
+    }
+
+    else if (command->op == OP_IFGOTO) {
+        /* 6 instructions are needed for this operation */
+        instructions = stackArenaPush(stack_arena, 6 * sizeof(mneumonic_t));
+        if (instructions == NULL) {
+            return NULL;
+        }
+
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);       // @SP
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M_MINUS_1, DEST_MD, JUMP_UNKNOWN, 0);           // MD=M-1
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D_PLUS_1, DEST_A, JUMP_UNKNOWN, 0);             // A=D+1
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M, DEST_D, JUMP_UNKNOWN, 0);                    // D=M
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, command->arguments.flow.label, 
+                COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);                                                                           // @label
+        createMneumonic(&instructions[instructions_index++], OPCODE_JUMP, NULL, COMP_D, DEST_UNKNOWN, JUMP_JNE, 0);                     // D;JNE
+    }
+
+    else if (command->op == OP_RETURN) {
+        /* 38 instructions are needed for this operation */
+        instructions = stackArenaPush(stack_arena, 39 * sizeof(mneumonic_t));
+        if (instructions == NULL) {
+            return NULL;
+        }
+
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);       // @SP
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M, DEST_A, JUMP_UNKNOWN, 0);                    // A=M
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M, DEST_D, JUMP_UNKNOWN, 0);                    // D=M
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "R13", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);      // @R13
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                    // M=D
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "LCL", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);      // @LCL
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M_MINUS_1, DEST_D, JUMP_UNKNOWN, 0);            // D=M-1
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);       // @SP
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_AM, JUMP_UNKNOWN, 0);                   // AM=D
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M, DEST_D, JUMP_UNKNOWN, 0);                    // D=M
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "R14", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);      // @R14
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                    // M=D
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);       // @SP
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M_MINUS_1, DEST_AM, JUMP_UNKNOWN, 0);           // AM=M-1
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M, DEST_D, JUMP_UNKNOWN, 0);                    // D=M
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "LCL", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);      // @LCL
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                    // M=D
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);       // @SP
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M_MINUS_1, DEST_AM, JUMP_UNKNOWN, 0);           // AM=M-1
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M, DEST_D, JUMP_UNKNOWN, 0);                    // D=M
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "R15", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);      // @R15
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                    // M=D
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "ARG", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);      // @ARG
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M_MINUS_1, DEST_D, JUMP_UNKNOWN, 0);            // D=M-1
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);       // @SP
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                    // M=D
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "R15", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);      // @R15
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M, DEST_D, JUMP_UNKNOWN, 0);                    // D=M
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "ARG", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);      // @ARG
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                    // M=D
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "R13", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);      // @R13
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M, DEST_D, JUMP_UNKNOWN, 0);                    // D=M
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);       // @SP
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M_PLUS_1, DEST_AM, JUMP_UNKNOWN, 0);            // AM=M+1
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                    // M=D
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "R14", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);      // @R14
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M, DEST_A, JUMP_UNKNOWN, 0);                    // A=M
+        createMneumonic(&instructions[instructions_index++], OPCODE_JUMP, NULL, COMP_0, DEST_UNKNOWN, JUMP_JMP, 0);                     // 0;JMP
+    }
+
+    else if (command->op == OP_FUNCTION) {
+        /* 9 instructions are needed for this operation */
+        instructions = stackArenaPush(stack_arena, 9 * sizeof(mneumonic_t));
+        if (instructions == NULL) {
+            return NULL;
+        }
+
+        createMneumonic(&instructions[instructions_index++], OPCODE_SYMBOL, command->arguments.flow.label, 
+                COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);                                                                           // (function)
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);       // @SP
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M, DEST_D, JUMP_UNKNOWN, 0);                    // D=M
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "LCL", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);      // @LCL
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D_PLUS_1, DEST_M, JUMP_UNKNOWN, 0);             // M=D+1
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_NUMBER, NULL, COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 
+                command->arguments.flow.locals);                                                                                        // @#locals
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D_PLUS_A, DEST_D, JUMP_UNKNOWN, 0);             // D=D+A
+        createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);       // @SP
+        createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                    // M=D
+    }
+
+    return generateMneumonics(instructions, instructions_index, stack_arena);
+}
 
 /* Translates a push memory command into assembly
  * return a null terminated string to the generated assembly code on success
@@ -483,10 +640,8 @@ char* translatePushCommand(assembly_gen_t* assembly_gen, stack_arena_t* stack_ar
 
     /* This is the assembly needed to increment the stack pointer */
     createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);  // @SP
-    createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M, DEST_A, JUMP_UNKNOWN, 0);               // A=M
+    createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M_PLUS_1, DEST_AM, JUMP_UNKNOWN, 0);       // AM=M+1
     createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);               // M=D
-    createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);  // @SP
-    createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M_PLUS_1, DEST_M, JUMP_UNKNOWN, 0);        // M=D
     
     /* Reclaim some memory if applicable, 10 is the total structures initially allocated */
     if (instructions_index < 10) {
@@ -508,7 +663,7 @@ char* translatePopCommand(assembly_gen_t* assembly_gen, stack_arena_t* stack_are
         return NULL;
     }
 
-    /* Assemby instructions to pop the value off the stack and put it in a register */
+    /* Assemby instructions to pop the value off the stack */
     createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);           // @SP
     createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M, DEST_A, JUMP_UNKNOWN, 0);                        // A=M
     createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M, DEST_D, JUMP_UNKNOWN, 0);                        // D=M
@@ -617,6 +772,9 @@ char* translatePopCommand(assembly_gen_t* assembly_gen, stack_arena_t* stack_are
  * Returns NULL on failur */
 char* translateCommand(assembly_gen_t* assembly_gen, stack_arena_t* stack_arena, command_t* command, const char* filename)
 {
+    /* This variable is used to count the number of function calls within a function */
+    static uint16_t call_counter = 0;
+
     switch (command->op) {
         case OP_ADD:
         case OP_SUB:
@@ -629,16 +787,18 @@ char* translateCommand(assembly_gen_t* assembly_gen, stack_arena_t* stack_arena,
         case OP_NOT:
             return translateLogicalCommand(stack_arena, command, filename);
 
+        case OP_FUNCTION:
+            call_counter = 0;  // Reset counter when a new function is declared
         case OP_LABEL:
         case OP_CALL:
+            call_counter++;    // Otherwise on a call increment it
         case OP_GOTO:
         case OP_IFGOTO:
         case OP_RETURN:
-        case OP_FUNCTION:
-            return translateFlowCommand(stack_arena, command, filename);
+            return translateFlowCommand(stack_arena, command, filename, call_counter);
 
         case OP_POP:
-            return tranlsatePopCommand(assembly_gen, stack_arena, command);
+            return translatePopCommand(assembly_gen, stack_arena, command);
         case OP_PUSH:
             return translatePushCommand(assembly_gen, stack_arena, command);
 
@@ -651,7 +811,104 @@ char* translateCommand(assembly_gen_t* assembly_gen, stack_arena_t* stack_arena,
  * be given an entry function name / symbol so that it knows where to jump to.
  * Returns -1 on failure
  * Return 0 on success */
-int32_t assemblyGenPreamble(assembly_gen_t* assembly_gen, const char* entry_function);
+int32_t assemblyGenPreamble(assembly_gen_t* assembly_gen, char* entry_function)
+{
+    stack_arena_t stack_arena;
+    if (stackArenaInitialize(&stack_arena, 1024) < 0) {
+        return -1;
+    }
+
+    command_t command;
+    command.op = OP_CALL;
+    command.arguments.flow.label = entry_function;
+    command.arguments.flow.locals = 0; // The entry function has no arguments
+
+    mneumonic_t instructions[21];
+    size_t instructions_index = 0;
+    char* assembly_str[2];
+
+    /* Instructions to set the registers */
+    createMneumonic(&instructions[instructions_index++], OPCODE_A_NUMBER, NULL, COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 256);         // @256
+    createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_A, DEST_D, JUMP_UNKNOWN, 0);                        // D=A
+    createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);           // @SP
+    createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                        // M=D
+    createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "ARG", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);          // @ARG
+    createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                        // M=D
+    createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "LCL", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);          // @LCL
+    createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                        // M=D
+    createMneumonic(&instructions[instructions_index++], OPCODE_A_NUMBER, NULL, COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 2048);        // @2048
+    createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_A, DEST_D, JUMP_UNKNOWN, 0);                        // D=A
+    createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "THIS", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);         // @THIS
+    createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                        // M=D
+    createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "THAT", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);         // @THAT
+    createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                        // M=D
+                                                                                                                                        
+    assembly_str[0] = generateMneumonics(instructions, instructions_index, &stack_arena);
+    instructions_index = 0; // Reset
+
+    if (assembly_str[0] == NULL) {
+        stackArenaRelease(&stack_arena);
+        return -1;
+    }
+
+    /* Generate the needed code to call the starting function */
+    assembly_str[1] = translateFlowCommand(&stack_arena, &command, "preamble", 0);
+    if (assembly_str[1] == NULL) {
+        stackArenaRelease(&stack_arena);
+        return -1;
+    }
+
+    /* Pop the null terminator off the previous string generated,
+     * this allows us to have the next string placed directly after
+     * the previous one, thus making it one longer string */
+    stackArenaPop(&stack_arena, 1);
+
+    /* Generate the boolean setting logic */
+
+    createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "preamble_end", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);                // @preamble_end
+    createMneumonic(&instructions[instructions_index++], OPCODE_SYMBOL, "preamble_end", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);                   // (preamble_end)
+    createMneumonic(&instructions[instructions_index++], OPCODE_JUMP, NULL, COMP_0, DEST_UNKNOWN, JUMP_JMP, 0);                                        // 0;JMP
+    createMneumonic(&instructions[instructions_index++], OPCODE_SYMBOL, "preable_bool_jumpback", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);         // (preable_bool_jumpback)
+    createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "SP", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);                          // @SP
+    createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M, DEST_A, JUMP_UNKNOWN, 0);                                       // A=M
+    createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D, DEST_M, JUMP_UNKNOWN, 0);                                       // M=D
+    createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "R13", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);                         // @R13
+    createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_M, DEST_A, JUMP_UNKNOWN, 0);                                       // A=M
+    createMneumonic(&instructions[instructions_index++], OPCODE_JUMP, NULL, COMP_0, DEST_UNKNOWN, JUMP_JMP, 0);                                        // 0;JMP
+    createMneumonic(&instructions[instructions_index++], OPCODE_SYMBOL, "preable_true", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);                  // (preable_true)
+    createMneumonic(&instructions[instructions_index++], OPCODE_A_NUMBER, NULL, COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 32767);                      // @32765
+    createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_A_PLUS_1, DEST_D, JUMP_UNKNOWN, 0);                                // D=A+1
+    createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_D_PLUS_A, DEST_D, JUMP_UNKNOWN, 0);                                // D=D+A
+    createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "preable_bool_jumpback", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);       // @preable_bool_jumpback
+    createMneumonic(&instructions[instructions_index++], OPCODE_JUMP, NULL, COMP_0, DEST_UNKNOWN, JUMP_JMP, 0);                                        // 0;JMP
+    createMneumonic(&instructions[instructions_index++], OPCODE_SYMBOL, "preable_false", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);                 // (preable_false)
+    createMneumonic(&instructions[instructions_index++], OPCODE_A_NUMBER, NULL, COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);                          // @0 
+    createMneumonic(&instructions[instructions_index++], OPCODE_COMPUTE, NULL, COMP_A, DEST_D, JUMP_UNKNOWN, 0);                                       // D=A
+    createMneumonic(&instructions[instructions_index++], OPCODE_A_SYMBOL, "preable_bool_jumpback", COMP_UNKNOWN, DEST_UNKNOWN, JUMP_UNKNOWN, 0);       // @preable_bool_jumpback
+    createMneumonic(&instructions[instructions_index++], OPCODE_JUMP, NULL, COMP_0, DEST_UNKNOWN, JUMP_JMP, 0);                                        // 0;JMP
+                                                                                                                                                       //
+    if (generateMneumonics(instructions, instructions_index, &stack_arena) == NULL) {
+        stackArenaRelease(&stack_arena);
+        return -1;
+    }
+    
+    size_t bytes_written = 0;
+    bytes_written += fwrite(assembly_str[0], 1, strlen(assembly_str[0]), assembly_gen->output_file); 
+    bytes_written += fwrite(assembly_str[1], 1, strlen(assembly_str[1]), assembly_gen->output_file); 
+
+    if (bytes_written < (strlen(assembly_str[0]) + strlen(assembly_str[1]))) {
+        stackArenaRelease(&stack_arena);
+        return -1;
+    }
+    
+    if (fflush(assembly_gen->output_file) < 0) {
+        stackArenaRelease(&stack_arena);
+        return -1;
+    }
+
+    stackArenaRelease(&stack_arena);
+    return 0;
+}
 
 /* Generate assembly from the given commands and write them to the output file
  * Return -1 on failure
@@ -669,8 +926,8 @@ int32_t assemblyGen(assembly_gen_t* assembly_gen, command_module_t* commands, co
 
 
     assert(assembly_gen != NULL && commands != NULL && filename != NULL &&
-           assembly_gen->output_file != NULL && commands->total_commands > 0); /* && commented out for testing
-           commands->commands[0].op == OP_FUNCTION); */
+           assembly_gen->output_file != NULL && commands->total_commands > 0  && 
+           commands->commands[0].op == OP_FUNCTION); 
 
     assembly_gen->static_variable_base = assembly_gen->total_static_variables;
     assembly_gen->total_static_variables = 0;
@@ -678,7 +935,7 @@ int32_t assemblyGen(assembly_gen_t* assembly_gen, command_module_t* commands, co
     stack_arena_t stack_arena;
 
     /* 512 bytes should be sufficient */
-    if (stackArenaInitialize(&stack_arena, 1024) < 0) {
+    if (stackArenaInitialize(&stack_arena, 4096) < 0) {
         return -1;
     }
 
